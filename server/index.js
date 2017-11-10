@@ -35,41 +35,46 @@ function RingpopServer(ringpop, tchannel, middlewares) {
 
     // Register stragglers ;)
     var createProxyReqHandler = require('./proxy-req.js');
-    registerEndpoint('/proxy/req', createProxyReqHandler(self.ringpop));
+    registerEndpoint('/proxy/req', true, createProxyReqHandler(self.ringpop));
 
     var createHealthHandler = require('./health.js');
-    registerEndpoint('/health', createHealthHandler());
+    registerEndpoint('/health', false, createHealthHandler());
 
     function registerEndpointHandlers(endpointHandlers) {
         Object.keys(endpointHandlers).forEach(function each(key) {
             var endpointHandler = endpointHandlers[key];
-            registerEndpoint(endpointHandler.endpoint,
+            registerEndpoint(endpointHandler.endpoint, false,
                 endpointHandler.handler(ringpop));
         });
     }
 
     // Wraps endpoint handler so that it doesn't have to
     // know TChannel req/res API.
-    function registerEndpoint(url, handler) {
-        tchannel.register(url, function (req, res, arg2, arg3) {
-
+    function registerEndpoint(url, stream, handler) {
+        tchannel.register(url, {streamed: stream}, function (req, res, arg2, arg3) {
+            if (stream) {
+                console.log('stream handler', req);
+                // Don't use streamed response
+                res = res({streamed: false});
+                handler(req, res, cb);
+                return;
+            }
             self.middlewareStack.run(req, arg2, arg3,
                 function(req, arg2, arg3, callback) {
                     handler(arg2, arg3, req.remoteAddr, callback);
-                },
-                function(req, err, res1, res2) {
-                    res.headers.as = 'raw';
-                    if (err) {
-                        res.sendNotOk(null, JSON.stringify(err));
-                    } else {
-                        if (res2 && !Buffer.isBuffer(res2)) {
-                            res2 = new Buffer(res2);
-                        }
+                }, cb);
 
-                        res.sendOk(res1, res2);
+            function cb(req, err, res1, res2) {
+                res.headers.as = 'raw';
+                if (err) {
+                    res.sendNotOk(null, JSON.stringify(err));
+                } else {
+                    if (res2 && !Buffer.isBuffer(res2)) {
+                        res2 = new Buffer(res2);
                     }
-                });
-
+                    res.sendOk(res1, res2);
+                }
+            }
         });
     }
 }

@@ -20,14 +20,29 @@
 
 'use strict';
 
+var rawBody = require('raw-body');
+var safeParse = require('../lib/util.js').safeParse;
+
 module.exports = function createProxyReqHandler(ringpop) {
-    return function handleProxyReq(arg1, arg2, hostInfo, callback) {
-        var header = arg1;
-        if (header === null) {
+    return function handleProxyReq(req, res, callback) {
+    	console.log(req);
+    	var arg2 = req.arg2;
+        if (arg2 === null) {
             return callback(new Error('need header to exist'));
         }
-
-        var body = arg2;
-        ringpop.requestProxy.handleRequest(header, body, callback);
+        rawBody(arg2, {
+        	limit: 1024 * 1024, // 1MB
+        	length: arg2.length
+        }, function _gotRawBody(err, rawHeader) {
+        	if (err) {
+        		return callback(err);
+        	}
+        	var header = safeParse(rawHeader);
+        	console.log('handleProxyReq', header);
+	        if (header === null) {
+	            return callback(new Error('header failed to parse'));
+	        }
+        	ringpop.requestProxy.handleRequest(header, req.arg3, callback);
+        })
     };
 };

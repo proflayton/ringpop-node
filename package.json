@@ -39,6 +39,7 @@
     "hammock": "^2.0.1",
     "metrics": "^0.1.8",
     "node-uuid": "^1.4.3",
+    "raw-body": "^2.2.0",
     "toobusy-js": "^0.5.0",
     "underscore": "^1.5.2"
   },
