@@ -25,24 +25,34 @@ var safeParse = require('../lib/util.js').safeParse;
 
 module.exports = function createProxyReqHandler(ringpop) {
     return function handleProxyReq(req, res, callback) {
-    	console.log(req);
-    	var arg2 = req.arg2;
-        if (arg2 === null) {
-            return callback(new Error('need header to exist'));
+    	var streamed = req.streamed;
+    	var header = req.arg2;
+		if (header === null) {
+            return callback(new Error('header no header'));
         }
-        rawBody(arg2, {
+    	if (!streamed) {
+    		handleRawHeader(null, header.toString());
+    		return;
+    	}
+    	console.log('streaming');
+        rawBody(header, {
         	limit: 1024 * 1024, // 1MB
-        	length: arg2.length
-        }, function _gotRawBody(err, rawHeader) {
+        	length: req.arg2.length
+        }, handleRawHeader);
+
+        function handleRawHeader(err, rawHeader) {
         	if (err) {
         		return callback(err);
         	}
-        	var header = safeParse(rawHeader);
+        	header = safeParse(rawHeader);
         	console.log('handleProxyReq', header);
 	        if (header === null) {
 	            return callback(new Error('header failed to parse'));
 	        }
-        	ringpop.requestProxy.handleRequest(header, req.arg3, callback);
-        })
+        	ringpop.requestProxy.handleRequest(header, req.arg3,
+        		function _requestProxyResponseWrapper(err, res1, res2) {
+        			callback(req, err, res1, res2);
+	        	});
+        }
     };
 };

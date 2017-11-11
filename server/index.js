@@ -53,7 +53,7 @@ function RingpopServer(ringpop, tchannel, middlewares) {
     function registerEndpoint(url, stream, handler) {
         tchannel.register(url, {streamed: stream}, function (req, res, arg2, arg3) {
             if (stream) {
-                console.log('stream handler', req);
+                // console.log('stream handler', req);
                 // Don't use streamed response
                 res = res({streamed: false});
                 handler(req, res, cb);
