@@ -105,6 +105,7 @@ function allocCluster(options, onReady) {
 
 function createServerHandler(name, opts) {
     return function serverHandle(req, res) {
+        console.log('Server Handler', req);
         if (req.headers['content-type'] === 'application/json') {
             jsonBody(req, null, {
                 limit: opts.bodyLimit

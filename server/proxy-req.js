@@ -21,6 +21,7 @@
 'use strict';
 
 var rawBody = require('raw-body');
+var RetriablePipe = require('../lib/request-proxy/retriable_pipe.js');
 var safeParse = require('../lib/util.js').safeParse;
 
 module.exports = function createProxyReqHandler(ringpop) {
@@ -31,14 +32,12 @@ module.exports = function createProxyReqHandler(ringpop) {
             return callback(new Error('header no header'));
         }
     	if (!streamed) {
+    		console.log('not streamed', req.arg3.toString());
     		handleRawHeader(null, header.toString());
     		return;
     	}
-    	console.log('streaming');
-        rawBody(header, {
-        	limit: 1024 * 1024, // 1MB
-        	length: req.arg2.length
-        }, handleRawHeader);
+    	console.log('streamingggg', req);
+        rawBody(header, {_type: "HEADER"}, handleRawHeader);
 
         function handleRawHeader(err, rawHeader) {
         	if (err) {
@@ -49,8 +48,9 @@ module.exports = function createProxyReqHandler(ringpop) {
 	        if (header === null) {
 	            return callback(new Error('header failed to parse'));
 	        }
-        	ringpop.requestProxy.handleRequest(header, req.arg3,
+        	ringpop.requestProxy.handleRequest(header, new RetriablePipe(req.arg3),
         		function _requestProxyResponseWrapper(err, res1, res2) {
+        			console.log('Proxy Req Handle', err);
         			callback(req, err, res1, res2);
 	        	});
         }
