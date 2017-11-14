@@ -27,6 +27,7 @@ var Member = require('../../lib/membership/member.js');
 var test = require('tape');
 var testRingpop = require('../lib/test-ringpop.js');
 var allocRingpop = require('../lib/alloc-ringpop.js');
+var allocRequest = require('../lib/alloc-request.js');
 
 var createAdminJoinHandler = AdminMember.memberJoin.handler;
 var createAdminLeaveHandler = AdminMember.memberLeave.handler;
@@ -207,7 +208,7 @@ test('no opts does not break handleOrProxy', function t(assert) {
     ringpop.requestProxy = mock.requestProxy;
 
     var key = 'KEY0';
-    var req = {};
+    var req = allocRequest({});
     var res = {};
     var opts = null;
     var handleOrProxy = ringpop.handleOrProxy.bind(ringpop, key, req, res, opts);

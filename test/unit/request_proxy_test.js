@@ -19,8 +19,10 @@
 // THE SOFTWARE.
 
 var allocRequest = require('../lib/alloc-request.js');
+var allocResponse = require('../lib/alloc-response.js');
 var mocks = require('../mock');
 var RequestProxy = require('../../lib/request-proxy/index.js');
+var RetriableStream = require('../../lib/retriable_stream.js');
 var Ringpop = require('../../index.js');
 var test = require('tape');
 
@@ -41,6 +43,21 @@ function createRequestProxy(opts) {
     return new RequestProxy(opts);
 }
 
+function overrideRequestSend(fn) {
+    return function _override() {
+        return {
+            sendArg1: function _sendArg1() {},
+            arg2: {
+                end: fn
+            },
+            arg3: new require('stream').PassThrough(),
+            hookupCallback: function _cb(cb) {
+                //cb(null, {ok: true}, {}, {});
+            }
+        }
+    };
+}
+
 test('request proxy sends custom ringpop metadata in head', function t(assert) {
     assert.plan(1);
 
@@ -49,20 +66,20 @@ test('request proxy sends custom ringpop metadata in head', function t(assert) {
 
     var proxy = createRequestProxy();
     var ringpop = proxy.ringpop;
-    ringpop.channel.request = function(/* options */) {
-        return {
-            send: function(arg1, arg2) {
-                var head = JSON.parse(arg2);
-                assert.deepEquals(head.ringpopKeys, [key], 'sends key in head');
+    var req = allocRequest({});
+    var stream = new RetriableStream(req);
+    ringpop.channel.request = overrideRequestSend(
+        function _endingArg2(arg2) {
+            var head = JSON.parse(arg2);
+            assert.deepEquals(head.ringpopKeys, [key], 'sends key in head');
 
-                ringpop.destroy();
-                assert.end();
-            }
-        };
-    };
+            ringpop.destroy();
+            assert.end();
+        });
     proxy.proxyReq({
         keys: [key],
-        req: allocRequest({}),
+        req: req,
+        stream: stream,
         dest: dest
     });
 });
@@ -76,6 +93,8 @@ test('request proxy emits head', function t(assert) {
         ringpopChecksum: proxy.ringpop.membership.checksum,
         ringpopKeys: ['KEY0']
     };
+    var req = allocRequest({});
+    var stream = new RetriableStream(req);
     proxy.ringpop.on('request', function(req, res, head) {
         assert.ok(req, 'req exists');
         assert.ok(res, 'res exists');
@@ -84,36 +103,30 @@ test('request proxy emits head', function t(assert) {
         ringpop.destroy();
         assert.end();
     });
-    proxy.handleRequest(headExpected, null, mocks.noop);
+    proxy.handleRequest(headExpected, stream, mocks.noop);
 });
 
 test('request proxy passes down skipLookupOnRetry correctly', function t(assert) {
-    assert.plan(2);
+    assert.plan(1);
 
     var key = 'donaldduck';
     var dest = 'disneyworld';
 
     var proxy = createRequestProxy();
     var ringpop = proxy.ringpop;
-    ringpop.requestProxy = proxy;
-    ringpop.channel.request = function(/* options */) {
-        return {
-            send: function() {
-                process.nextTick(function () {
-                    assert.equals(proxy.sends.length, 1, '1 send');
-                    assert.equals(proxy.sends[0].skipLookupOnRetry, true, 'skipLookupOnRetry passed down');
-
-                    ringpop.destroy();
-                    assert.end();
-                });
-            }
-        };
+    var req = allocRequest({});
+    var stream = new RetriableStream(req);
+    ringpop.channel.request = overrideRequestSend(function _override() {});
+    proxy.sends.push = function _overrideSendsPush(send) {
+        assert.equals(send.skipLookupOnRetry, true, 'skipLookupOnRetry passed down');
+        ringpop.destroy();
+        assert.end();
     };
-    ringpop.proxyReq({
+    proxy.proxyReq({
         keys: [key],
-        req: allocRequest({}),
+        req: req,
+        stream: stream,
         dest: dest,
-        res: {},
         skipLookupOnRetry: true
     });
 });
@@ -130,6 +143,7 @@ test('request proxy consistency defaults', function t(assert) {
 test('request proxy - ring consistency: enabled', function t(assert) {
     assert.plan(2);
 
+    var stream = new RetriableStream(new Buffer(0));
     assert.test('returns error on invalid checksum', function st(assert) {
         assert.plan(5);
 
@@ -147,7 +161,7 @@ test('request proxy - ring consistency: enabled', function t(assert) {
         proxy.ringpop.on('request', function onRequest() {
             assert.fail('request should be dropped')
         });
-        proxy.handleRequest(headExpected, null, function requestHandled(err, head, body) {
+        proxy.handleRequest(headExpected, stream, function requestHandled(err, head, body) {
             assert.notok(head, 'head should be null');
             assert.notok(body, 'body should be null');
 
@@ -183,7 +197,7 @@ test('request proxy - ring consistency: enabled', function t(assert) {
             res.end(respBody);
         });
 
-        proxy.handleRequest(headExpected, null, function requestHandled(err, head, body) {
+        proxy.handleRequest(headExpected, stream, function requestHandled(err, head, body) {
             assert.notok(err);
             assert.ok(head);
             assert.equal(body, respBody);
@@ -203,7 +217,7 @@ test('request proxy - handles request with invalid checksum and ring consistency
         ringpopChecksum: ringpop.membership.checksum + 1,
         ringpopKeys: ['KEY0']
     };
-
+    var stream = new RetriableStream(new Buffer(0));
     var respBody = {test: 'done'};
 
     ringpop.on('requestProxy.checksumsDiffer', function() {
@@ -218,7 +232,7 @@ test('request proxy - handles request with invalid checksum and ring consistency
         res.end(respBody);
     });
 
-    proxy.handleRequest(headExpected, null, function requestHandled(err, head, body) {
+    proxy.handleRequest(headExpected, stream, function requestHandled(err, head, body) {
         assert.notok(err);
         assert.ok(head);
         assert.equal(body, respBody);
@@ -236,7 +250,7 @@ test('request proxy - key consistency - returns error when key not owned by node
         enforceKeyConsistency: true
     });
     var ringpop = proxy.ringpop;
-
+    var stream = new RetriableStream(new Buffer(0));
     // force lookup to a different node
     ringpop.lookup = function() {
         return 'not me';
@@ -255,7 +269,7 @@ test('request proxy - key consistency - returns error when key not owned by node
         assert.fail('request should not be handled');
     });
 
-    proxy.handleRequest(headExpected, null, function requestHandled(err, head, body) {
+    proxy.handleRequest(headExpected, stream, function requestHandled(err, head, body) {
         assert.notok(head, 'head should be null');
         assert.notok(body, 'body should be null');
 
@@ -275,7 +289,7 @@ test('request proxy - key consistency - emit stat once', function t(assert) {
         enforceKeyConsistency: false
     });
     var ringpop = proxy.ringpop;
-
+    var stream = new RetriableStream(new Buffer(0));
     // force lookup to a different node
     ringpop.lookup = function() {
         return 'not me';
@@ -300,7 +314,7 @@ test('request proxy - key consistency - emit stat once', function t(assert) {
         res.end('done');
     });
 
-    proxy.handleRequest(headExpected, null, function requestHandled(err, head, body) {
+    proxy.handleRequest(headExpected, stream, function requestHandled(err, head, body) {
         assert.notok(err);
         assert.ok(head);
         assert.equal(body, 'done');

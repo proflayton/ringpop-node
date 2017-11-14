@@ -72,6 +72,7 @@ var SelfEvict = require('./lib/self-evict');
 var TracerStore = require('./lib/trace/store.js');
 var middleware = require('./lib/middleware');
 var DiscoverProviderHealer = require('./lib/partition_healing').DiscoverProviderHealer;
+var RetriableStream = require('./lib/retriable_stream.js');
 
 var HOST_PORT_PATTERN = /^(\d+.\d+.\d+.\d+):\d+$/;
 var MEMBERSHIP_UPDATE_FLUSH_INTERVAL = 5000;
@@ -634,6 +635,7 @@ RingPop.prototype.handleOrProxy =
             });
             return true;
         } else {
+            var stream = new RetriableStream(req);
             this.logger.trace('handleOrProxy was proxied', {
                 key: key,
                 url: req && req.url
@@ -642,6 +644,7 @@ RingPop.prototype.handleOrProxy =
                 keys: [key],
                 dest: dest,
                 req: req,
+                stream: stream,
                 res: res,
             }, opts));
         }
@@ -652,6 +655,7 @@ RingPop.prototype.handleOrProxyAll =
         var self = this;
         var keys = opts.keys;
         var req = opts.req;
+        var stream = new RetriableStream(req);
 
         var whoami = this.whoami();
         var keysByDest = _.groupBy(keys, this.lookup, this);
@@ -688,6 +692,7 @@ RingPop.prototype.handleOrProxyAll =
                 self.proxyReq(_.defaults({
                     keys: destKeys,
                     req: req,
+                    stream: stream,
                     res: res,
                     dest: dest
                 }, opts));
