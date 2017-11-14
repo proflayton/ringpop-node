@@ -635,7 +635,6 @@ RingPop.prototype.handleOrProxy =
             });
             return true;
         } else {
-            var stream = new RetriableStream(req);
             this.logger.trace('handleOrProxy was proxied', {
                 key: key,
                 url: req && req.url
@@ -644,7 +643,6 @@ RingPop.prototype.handleOrProxy =
                 keys: [key],
                 dest: dest,
                 req: req,
-                stream: stream,
                 res: res,
             }, opts));
         }
